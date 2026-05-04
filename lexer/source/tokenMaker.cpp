@@ -44,18 +44,9 @@ void TokenMaker::setNext(TokenMaker &next) { this->next = &next; }
 // insert a new token after the current token
 void TokenMaker::insertAfter(TokenMaker &prevToken, std::string type, std::string value, int Line)
 {
-    if (&prevToken == nullptr)
-    {
-        std::cout << "Creating New Token stream . . . .  . " << std::endl;
-        TokenMaker *newToken = new TokenMaker(value, type, Line);
-    }
-    else
-    {
-        std::cout << "Inserting at Line : " << Line << std::endl;
-        TokenMaker *newToken = new TokenMaker(value, type, Line, &prevToken);
-        TokenMaker *tempPrevToken = &prevToken;
-        tempPrevToken->setNext(*newToken);
-    }
+    std::cout << "Inserting at Line : " << Line << std::endl;
+    TokenMaker *newToken = new TokenMaker(value, type, Line, &prevToken);
+    prevToken.setNext(*newToken);
 }
 
 void TokenMaker::traverseLines(TokenMaker &Head)

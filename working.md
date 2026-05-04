@@ -1,63 +1,70 @@
 # Working Of The M2C Compiler
 
-This document is the full technical walkthrough for the repository. It explains:
+This document explains how the repository works today.
 
-1. What the project is trying to become.
-2. What is actually implemented right now.
-3. How the current lexer executable works internally.
-4. How the full five-stage compiler pipeline is intended to work.
-5. Where the gaps, limitations, and next implementation steps are.
+It focuses on the real implementation now present in the codebase:
+
+1. Root-level build and run flow
+2. Lexing and token storage
+3. Parsing and validation
+4. C++ code generation
+5. Inline x86 assembly generation for arithmetic
+6. Automatic compilation of generated code into an executable
 
 ## 1. Big Picture
 
-M2C stands for Morse-to-C. The target idea is:
+M2C stands for Morse-to-C, but the current implementation is best described as:
 
 ```text
-Morse-inspired source code (.cym2c)
-  -> lexical analysis
-  -> parsing / AST building
-  -> semantic analysis
-  -> optional optimization
-  -> C code generation
-  -> compile generated C with a normal C compiler
+.cym2c source
+  -> lexer/tokenizer
+  -> parser
+  -> validated statement list
+  -> C++ code generator
+  -> generated .cpp file
+  -> g++ system call
+  -> final executable
 ```
 
-The repository is already organized around those five phases:
-
-| Phase | Folder | Purpose | Current state |
-|---|---|---|---|
-| Lexer | `lexer/` | Read source and recognize tokens/Morse text | Implemented and runnable |
-| Syntaxer | `syntaxer/` | Turn tokens into an AST | Design notes only |
-| Semanter | `semanter/` | Validate meaning, types, and scope | Design notes only |
-| Optimizers | `optimizers/` | Improve the validated program | Design notes only |
-| Generators | `generators/` | Emit C code | Design notes only |
-
-So the repository already contains the planned pipeline structure, but only the lexer is executable at the moment.
+So the project is no longer just a lexer prototype. It now performs a small but complete end-to-end compile pipeline.
 
 ## 2. Repository Layout
 
 ```text
 m2c compiler/
+├── build.sh
+├── run.sh
+├── m2c_bin
 ├── readme.md
 ├── working.md
 ├── contribution.md
 ├── CONTRIBUTING.md
 ├── m2c_files/
 │   ├── test.cym2c
-│   └── test2.cym2c
+│   ├── test2.cym2c
+│   ├── test_math.cym2c
+│   └── stress_test.cym2c
 ├── lexer/
 │   ├── include/
+│   │   ├── code_generator.h
 │   │   ├── excptsextra.h
 │   │   ├── morse.h
+│   │   ├── parser.h
+│   │   ├── tokenMaker.h
+│   │   ├── token_types.h
 │   │   └── tokens.h
 │   ├── source/
+│   │   ├── code_generator.cpp
 │   │   ├── excptsextra.cpp
 │   │   ├── main.cpp
-│   │   └── morse.cpp
-│   ├── scripts/
-│   │   └── build.sh
+│   │   ├── morse.cpp
+│   │   ├── parser.cpp
+│   │   └── tokenMaker.cpp
 │   ├── compiled/
 │   │   └── lexer
+│   ├── scripts/
+│   │   ├── build.sh
+│   │   └── run.sh
 │   └── readme.md
 ├── syntaxer/
 │   └── readme.md
@@ -69,639 +76,624 @@ m2c compiler/
     └── readme.md
 ```
 
-## 3. Two Pipelines To Keep In Mind
+Important note:
 
-There are really two different pipelines to understand in this repo.
+- `build.sh` and `run.sh` at the repository root are the active workflow now.
+- The older `lexer/scripts/` scripts still exist, but they are no longer the primary entry point.
 
-### 3.1 The Real Pipeline That Works Today
+## 3. What The Compiler Supports Right Now
+
+The current implementation supports a deliberately small MVP language.
+
+### 3.1 Structural Markers
+
+- `/` for the main marker
+- `{` and `}` for blocks
+- `//` for comments
+
+### 3.2 Print Syntax
+
+Two print forms are supported:
 
 ```text
-.cym2c file
-  -> fileReader opens file
-  -> readFile() scans each line
-  -> characters are classified as keyword / separator / parenthesis / quote / buffer text
-  -> quoted Morse strings are translated to letters and digits
-  -> diagnostics are printed to stdout
-  -> end-of-line semicolon check may raise CompileError
+<".... . .-.. .-.. ---">;
+<x>;
+<42>;
 ```
 
-This is the code path in the current executable.
+Meaning:
 
-### 3.2 The Intended Full Compiler Pipeline
+- A quoted Morse string is translated by the lexer and later emitted as a string print.
+- An identifier or number inside `< >` is emitted as a numeric/value print.
+
+### 3.3 Assignment Syntax
+
+Simple assignment:
 
 ```text
-.cym2c file
-  -> Lexer creates real Token objects
-  -> Syntaxer creates AST nodes
-  -> Semanter validates scope and types
-  -> Optimizers simplify the AST
-  -> Generators emit C source
-  -> gcc/clang compiles the emitted C
+let x = 5;
+let y = x;
 ```
 
-This is the architecture described by the phase READMEs and by the project goal.
+Simple arithmetic assignment:
 
-## 4. Current Executable: Entry Point And Control Flow
+```text
+let a = 5 + 3;
+let b = a * 2;
+let c = b - 4;
+let d = c / 2;
+```
 
-The current program starts in [lexer/source/main.cpp](lexer/source/main.cpp).
+This is the main arithmetic MVP currently implemented.
 
-### 4.1 `main()`
+## 4. Build And Run Flow
 
-`main()` does only three things:
+### 4.1 Root Build Script
 
-1. Creates a `fileReader` object.
-2. Hardcodes the input file path to `../../m2c_files/test.cym2c`.
-3. Calls `readFile()`.
+The active build script is [build.sh](build.sh).
 
-That means the default run path is tied to the sample file unless the code is changed or `openFile()` is wired in.
+It compiles every `.cpp` file in `lexer/source/`, includes `lexer/include/`, and writes the compiler executable to:
 
-### 4.2 `fileReader`
+```text
+./m2c_bin
+```
 
-`fileReader` is the main lexer driver class. It stores:
+Equivalent command:
 
-- `std::ifstream inputFile`
-- `std::string fileName`
-- `std::string readLine`
-- `int i`
-- `int error`
-- `int Line`
+```bash
+g++ -std=c++17 lexer/source/*.cpp -I lexer/include -Wall -Wextra -pedantic -o m2c_bin
+```
 
-Important behavior:
+### 4.2 Root Run Script
 
-- The constructor opens the file immediately.
-- If the file cannot be opened, the program prints an error and exits.
-- The destructor closes the file and prints `destructor called!!`.
+The active run script is [run.sh](run.sh).
 
-## 5. Current Source Input
+Usage:
 
-The default sample file is [m2c_files/test.cym2c](m2c_files/test.cym2c):
+```bash
+bash run.sh <input.cym2c> [output_binary_name]
+```
+
+Examples:
+
+```bash
+bash run.sh m2c_files/test.cym2c demo_print
+bash run.sh m2c_files/test_math.cym2c demo_math
+bash run.sh m2c_files/stress_test.cym2c stress_demo
+```
+
+If the second argument is omitted, `run.sh` defaults the output binary name to:
+
+```text
+m2c_program
+```
+
+### 4.3 CLI Inside The Compiler
+
+Inside [lexer/source/main.cpp](lexer/source/main.cpp), the compiler itself expects:
+
+```text
+m2c <input> -o <output_binary_name>
+```
+
+So the root script translates the friendlier shell usage into the compiler’s stricter internal CLI.
+
+## 5. High-Level Control Flow
+
+The real control flow today is:
+
+```text
+input .cym2c file
+  -> FileReader tokenizes source into std::vector<Token>
+  -> Parser validates supported statements
+  -> Parser returns std::vector<Statement>
+  -> CodeGenerator writes <output>_generated.cpp
+  -> main.cpp calls g++ with std::system(...)
+  -> final executable is produced
+```
+
+This all happens in one run of `m2c_bin`.
+
+## 6. Lexing And Token Storage
+
+The lexer driver is implemented inside [lexer/source/main.cpp](lexer/source/main.cpp) as `FileReader`.
+
+### 6.1 Token Model
+
+Tokens are defined in [lexer/include/token_types.h](lexer/include/token_types.h).
+
+Current token categories include:
+
+- `MainMarker`
+- `LoopMarker`
+- `ConditionalMarker`
+- `ExitMarker`
+- `LetKeyword`
+- `PrintStart`
+- `PrintEnd`
+- `Separator`
+- `BlockStart`
+- `BlockEnd`
+- `OpenParenthesis`
+- `CloseParenthesis`
+- `MorseString`
+- `Identifier`
+- `Number`
+- `Assignment`
+- `ArithmeticOperator`
+- `Comment`
+
+Each token stores:
+
+- token type
+- raw or translated value
+- line number
+
+### 6.2 What The Lexer Actually Does
+
+`FileReader::readFile()`:
+
+1. Opens the `.cym2c` file
+2. Reads it line by line
+3. Tokenizes each line character by character
+4. Appends tokens into `std::vector<Token>`
+5. Returns that token vector to the parser
+
+This is a major architectural change from the earlier lexer-only version that printed diagnostics directly to stdout.
+
+### 6.3 Lexing Rules
+
+The lexer currently recognizes:
+
+- comments using `//`
+- block markers `{` and `}`
+- print delimiters `<` and `>`
+- assignment `=`
+- arithmetic operators `+`, `-`, `*`, `/`
+- `let`
+- identifiers like `x`, `total`, `_tmp`
+- integer literals like `5`, `42`, `15000`
+- Morse strings inside quotes
+
+### 6.4 Division Versus Main Marker
+
+The character `/` is overloaded:
+
+- it is the main-program marker in the language
+- it is also the arithmetic division operator
+
+The lexer resolves this with context:
+
+- if `/` appears between expression operands, it becomes `ArithmeticOperator`
+- otherwise it becomes `MainMarker`
+
+This is implemented in `isDivisionOperator(...)` inside [lexer/source/main.cpp](lexer/source/main.cpp).
+
+### 6.5 Morse Translation
+
+Quoted Morse strings are decoded immediately during lexing using [lexer/source/morse.cpp](lexer/source/morse.cpp).
+
+Example:
+
+```text
+<".... . .-.. .-.. ---">;
+```
+
+becomes a token like:
+
+```text
+TokenType::MorseString value="HELLO"
+```
+
+The parser and generator never need to decode Morse again. They only consume the translated token value.
+
+## 7. Parsing And Validation
+
+The parser lives in:
+
+- [lexer/include/parser.h](lexer/include/parser.h)
+- [lexer/source/parser.cpp](lexer/source/parser.cpp)
+
+### 7.1 Parser Output
+
+The parser does not build a full AST yet.
+
+Instead, it returns:
+
+```cpp
+std::vector<Statement>
+```
+
+This is a lightweight intermediate representation for the currently supported language subset.
+
+### 7.2 Statement Types
+
+The current parser supports four statement kinds:
+
+- `PrintString`
+- `PrintValue`
+- `VariableAssignment`
+- `ArithmeticAssignment`
+
+### 7.3 Print Validation
+
+The parser validates print forms such as:
+
+```text
+<".... . .-.. .-.. ---">;
+<x>;
+<42>;
+```
+
+It enforces:
+
+- `<` must start the statement
+- the next token must be a Morse string, identifier, or number
+- `>` must close the print
+- `;` must terminate the statement
+
+If a print statement is malformed, the parser throws `CompileError`.
+
+### 7.4 Assignment Validation
+
+The parser validates:
+
+```text
+let x = 5;
+let y = x;
+let z = y + 3;
+```
+
+It enforces:
+
+- `let` must begin the declaration
+- an identifier must follow
+- `=` must appear next
+- the right-hand side must be either:
+  - one operand, or
+  - operand operator operand
+- the statement must end with `;`
+
+### 7.5 Declaration Checks
+
+The parser also tracks declared identifiers with a simple set.
+
+That means:
+
+- using an identifier in a print before it is declared is rejected
+- using an identifier on the right-hand side before declaration is rejected
+
+This is a small semantic check embedded in the current parser layer.
+
+## 8. Code Generation
+
+The generator lives in:
+
+- [lexer/include/code_generator.h](lexer/include/code_generator.h)
+- [lexer/source/code_generator.cpp](lexer/source/code_generator.cpp)
+
+### 8.1 Generator Input
+
+The generator consumes:
+
+```cpp
+std::vector<Statement>
+```
+
+### 8.2 Generator Output
+
+It writes a standalone C++ source file named:
+
+```text
+<output_binary_name>_generated.cpp
+```
+
+Example:
+
+- output binary: `demo_math`
+- generated source: `demo_math_generated.cpp`
+
+### 8.3 Generated File Structure
+
+Each generated file contains:
+
+```cpp
+#include <iostream>
+
+int main()
+{
+    ...
+    return 0;
+}
+```
+
+### 8.4 Print Emission
+
+String print:
+
+```text
+<".... . .-.. .-.. ---">;
+```
+
+emits:
+
+```cpp
+std::cout << "HELLO" << std::endl;
+```
+
+Value print:
+
+```text
+<x>;
+```
+
+emits:
+
+```cpp
+std::cout << x << std::endl;
+```
+
+### 8.5 Simple Assignment Emission
+
+Input:
+
+```text
+let x = 5;
+let y = x;
+```
+
+emits:
+
+```cpp
+int x = 5;
+int y = x;
+```
+
+or reassignment if the variable already exists later in the generated function.
+
+## 9. Inline Assembly Arithmetic
+
+This is the most distinctive part of the current generator.
+
+Arithmetic assignments do not emit normal C++ arithmetic expressions.
+
+Instead, they emit GCC inline x86 assembly using `__asm__`.
+
+### 9.1 Addition
+
+Input:
+
+```text
+let x = 5 + 3;
+```
+
+Generates code in this style:
+
+```cpp
+int x = 0;
+int __m2c_left_0 = 5;
+int __m2c_right_0 = 3;
+__asm__ (
+    "movl %1, %%eax;"
+    "addl %2, %%eax;"
+    "movl %%eax, %0;"
+    : "=r" (x)
+    : "r" (__m2c_left_0), "r" (__m2c_right_0)
+    : "%eax"
+);
+```
+
+### 9.2 Subtraction
+
+Uses:
+
+```text
+subl
+```
+
+### 9.3 Multiplication
+
+Uses:
+
+```text
+imull
+```
+
+### 9.4 Division
+
+Uses:
+
+```text
+cltd
+idivl
+```
+
+and clobbers both `%eax` and `%edx`.
+
+### 9.5 Temporary Operands
+
+For each arithmetic statement, the generator creates temporary C++ locals like:
+
+```cpp
+__m2c_left_0
+__m2c_right_0
+```
+
+These hold the evaluated operands and are then passed into the inline assembly block.
+
+That keeps the assembly emission simple and readable for presentation/demo purposes.
+
+## 10. Automatic Executable Compilation
+
+After generating the intermediate `.cpp` file, [lexer/source/main.cpp](lexer/source/main.cpp) builds the final executable automatically.
+
+The sequence is:
+
+1. derive `<output_binary_name>_generated.cpp`
+2. write that file
+3. build a shell-safe `g++` command string
+4. call `std::system(...)`
+5. fail if the compiler returns a non-zero code
+
+Effective command shape:
+
+```bash
+g++ -std=c++17 <generated_cpp> -o <output_binary_name>
+```
+
+So the user experience is:
+
+```text
+run the compiler once
+  -> get generated C++
+  -> get final executable
+```
+
+## 11. Error Handling
+
+Custom compile-time errors use [lexer/include/excptsextra.h](lexer/include/excptsextra.h) and [lexer/source/excptsextra.cpp](lexer/source/excptsextra.cpp).
+
+`CompileError` is used for:
+
+- malformed line endings
+- invalid tokens
+- bad print syntax
+- bad assignment syntax
+- undeclared identifier use
+- unexpected parser tokens
+
+Error messages follow this shape:
+
+```text
+Compile Error : <message> At Line (<n>) : <line text>
+```
+
+This is still simple, but it gives a usable compile-style error surface for demos.
+
+## 12. Example Inputs
+
+### 12.1 Morse Print
+
+From [m2c_files/test.cym2c](m2c_files/test.cym2c):
 
 ```text
 /{
-    <".... . .-.. .-.. ---  .... . .-.. .-.. ---  .-- --- .-. .-.. -.. ">;
-}
-
-
-// exit(71);
-```
-
-This represents:
-
-- `/` for the main marker
-- `{` and `}` for the block
-- `< ... >;` for a print-style statement
-- Morse inside quotes that the current code translates to `HELLO HELLO WORLD`
-- A trailing comment line beginning with `//`
-
-## 6. Current Lexer Phase In Detail
-
-The current implementation is not yet a clean token-stream API. Instead, it behaves like a scanner and logger. The logic sits mostly inside `fileReader::readFile()`.
-
-### 6.1 Read Loop
-
-`readFile()`:
-
-1. Resets `Line` to `0`.
-2. Reads the source file line by line using `std::getline`.
-3. Iterates through each character in the current line.
-4. Builds a local `buffer` string for ordinary characters.
-5. Prints what it discovers as it goes.
-
-### 6.2 Character Classification Rules
-
-Inside the inner loop, the current character is matched in this order.
-
-#### A. Comment Detection
-
-If the current character is `/` and the next one is also `/`, the rest of the line is treated as a comment:
-
-```cpp
-if (current == '/' && readLine[i + 1] == '/')
-```
-
-The program prints:
-
-```text
-Comment : "// exit(71);"
-```
-
-and stops processing that line.
-
-#### B. Separators
-
-The code checks whether the current character exists in `M2C::separatorMap` from [lexer/include/tokens.h](lexer/include/tokens.h).
-
-Current separator map:
-
-```cpp
-{
-    {"{", "CURL_ST"},
-    {"}", "CURL_END"},
-    {",", "COMA"},
-    {";", "SEMI_COLON"},
-    {" ", "SPACE"}
+<".... . .-.. .-.. ---  .... . .-.. .-.. ---  .-- --- .-. .-.. -.. ">;
+<".... . .-.. .-.. ---   .-- --- .-. .-.. -..">;
+<"....">;
 }
 ```
 
-When a separator is found:
-
-- It prints the separator.
-- If `buffer` is not empty, it prints the buffer too.
-- Then it clears `buffer`.
-
-Because the space character is listed as a separator, indentation spaces are printed as separators too.
-
-#### C. Keywords
-
-The code checks whether the current character exists in `M2C::keywordsMap`.
-
-Current keyword map:
-
-```cpp
-{
-    {"/",  "MAIN"},
-    {"%",  "FOR"},
-    {"%%", "WHILE"},
-    {"~",  "IF"},
-    {"~~", "ELSE"},
-    {"<",  "PRINTST"},
-    {">",  "PRINTEND"},
-    {"^",  "EXIT"}
-}
-```
-
-Important detail:
-
-- The map includes multi-character entries such as `%%` and `~~`.
-- The active scan checks one character at a time using `std::string(1, current)`.
-- So today it can recognize `%` and `~` individually, but it does not yet combine them into `%%` or `~~` during scanning.
-
-That is one of the biggest gaps between the declared token model and the implemented behavior.
-
-#### D. Parentheses
-
-Parentheses are handled separately:
-
-- `(` prints `Open Parenthesis`
-- `)` prints `Close Parenthesis`
-
-The current `buffer` content is also printed around parentheses.
-
-#### E. Quoted Strings
-
-When `"` is found:
-
-1. The index is advanced once.
-2. The program prints `Found Quote!`
-3. It calls `morse_parse(readLine, i)`.
-
-This is the most compiler-like feature already working in the codebase.
-
-#### F. Everything Else
-
-Any other character is appended to `buffer` and printed as `Token : <char>`.
-
-## 7. Morse Translation Subsystem
-
-The Morse-specific code lives in [lexer/include/morse.h](lexer/include/morse.h) and [lexer/source/morse.cpp](lexer/source/morse.cpp).
-
-### 7.1 Morse Maps
-
-There are two main lookup maps.
-
-#### Character Map
-
-`charMap` translates Morse letters to uppercase Latin letters:
-
-```cpp
-{".-", 'A'}, {"-...", 'B'}, {"-.-.", 'C'}, {"-..", 'D'}, {".", 'E'}, ...
-```
-
-#### Numeric Map
-
-`numericMap` translates Morse digits:
-
-```cpp
-{"-----", '0'}, {".----", '1'}, {"..---", '2'}, {"...--", '3'}, {"....-", '4'},
-{".....", '5'}, {"-....", '6'}, {"--...", '7'}, {"---..", '8'}, {"----.", '9'}
-```
-
-Because these maps store uppercase letters, translated text comes out uppercase.
-
-### 7.2 Helper Functions
-
-The current helpers are:
-
-- `isChar(std::string buffer)`
-- `isNum(std::string buffer)`
-- `isMorse(std::string buffer)`
-- `morseToChar(std::string buffer)`
-- `morseToStr(std::string buffer)`
-- `morseType(std::string buffer)`
-- `morse_parse(std::string& readLine, int& i)`
-
-What they do:
-
-- `isChar` checks `charMap`.
-- `isNum` checks `numericMap`.
-- `isMorse` returns true if either of the above succeeds.
-- `morseToChar` returns the decoded character or `?`.
-- `morseToStr` returns a one-character `std::string` or an error string.
-- `morseType` reports whether a Morse token is alphabetic, numeric, or unknown.
-
-### 7.3 Shared Parse State
-
-The header also defines a namespace:
-
-```cpp
-namespace morseVars {
-    static inline std::string translatedToken = "String Not initialized";
-    static inline std::string buffer = "";
-    static inline std::string wrod = "";
-}
-```
-
-This is shared mutable state used by `morse_parse()`.
-
-Important notes:
-
-- `wrod` is intentionally spelled that way in the current code.
-- The parse state is global to the translation helpers rather than being local to a lexer object.
-- That makes the code simple, but it also makes reuse and testing harder.
-
-### 7.4 How `morse_parse()` Works
-
-`morse_parse()` walks the source line starting just after an opening quote.
-
-The current logic is roughly:
-
-1. If the next character is another quote, return the previously stored `translatedToken`.
-2. Reset `translatedToken` to an empty string.
-3. Iterate until the line ends or another quote is reached.
-4. Accumulate Morse dots and dashes into `morseVars::buffer`.
-5. On a space:
-   - If `buffer` is valid Morse, decode it and append the letter/digit to `wrod`.
-   - If the next character is another space or a closing quote, commit the current `wrod` into `translatedToken`, then append a space.
-6. On a closing quote:
-   - Finalize the last pending Morse letter if needed.
-   - Return the translated string.
-
-The double-space rule is significant:
-
-- A single space separates Morse letters.
-- A double space separates words.
-
-That is why:
-
-```text
-.... . .-.. .-.. ---  .-- --- .-. .-.. -..
-```
-
-becomes:
-
-```text
-HELLO WORLD
-```
-
-### 7.5 Output Example
-
-For the sample input in `test.cym2c`, the quoted Morse string is translated to:
+Produces generated C++ that prints translated strings such as:
 
 ```text
 HELLO HELLO WORLD
+HELLO WORLD
+H
 ```
 
-This exact behavior was verified by running the current executable.
+### 12.2 Arithmetic Demo
 
-## 8. Error Handling
-
-Custom compile-time errors are defined in:
-
-- [lexer/include/excptsextra.h](lexer/include/excptsextra.h)
-- [lexer/source/excptsextra.cpp](lexer/source/excptsextra.cpp)
-
-### 8.1 `CompileError`
-
-`CompileError` stores:
-
-- message
-- source line
-- line number
-- formatted combined error text
-
-The formatted message looks like:
+From [m2c_files/test_math.cym2c](m2c_files/test_math.cym2c):
 
 ```text
-Compile Error : <message> At Line (<n>) : <source line>
+/{
+let x = 5 + 3;
+let y = x * 2;
+<x>;
+<y>;
+<".... . .-.. .-.. ---">;
+}
 ```
 
-### 8.2 Current Validation Rule
-
-At the end of each processed line, `readFile()` performs a simple line-ending validation:
-
-- If the loop reached the line end
-- and `buffer` is still non-empty
-- and the last relevant character was not `;`
-- and the line is not considered properly closed
-
-then a `CompileError` is thrown and caught locally.
-
-This is a lightweight semicolon-style guard, not a full grammar check.
-
-## 9. Build And Run Pipeline
-
-The build script is [lexer/scripts/build.sh](lexer/scripts/build.sh).
-
-Its command is:
-
-```bash
-g++ ../source/main.cpp ../source/excptsextra.cpp ../source/morse.cpp -I ../include -o ../compiled/lexer -Wall -Wextra
-```
-
-Then it changes into `../compiled/` and runs `./lexer`.
-
-### 9.1 Important Path Detail
-
-This script assumes the current working directory is `lexer/scripts`.
-
-If you run:
-
-```bash
-bash lexer/scripts/build.sh
-```
-
-from the repository root, the relative paths break. The script works correctly when launched like this:
-
-```bash
-cd lexer/scripts
-bash build.sh
-```
-
-### 9.2 Equivalent Root-Level Build Command
-
-From the repository root, you can compile directly with:
-
-```bash
-g++ lexer/source/main.cpp lexer/source/excptsextra.cpp lexer/source/morse.cpp \
-  -I lexer/include \
-  -o lexer/compiled/lexer \
-  -Wall -Wextra
-```
-
-Then run:
-
-```bash
-./lexer/compiled/lexer
-```
-
-## 10. Real Console Output Today
-
-Running the current executable against `m2c_files/test.cym2c` prints output like:
+Produces output:
 
 ```text
-Keyword : "/"
-Seperator : " { "
-Keyword : "<"
-Found Quote!
-morse Translation? HELLO HELLO WORLD
-Seperator : " } "
-Comment : "// exit(71);"
-destructor called!!
+8
+16
+HELLO
 ```
 
-This matters because it shows the current phase boundary:
-
-- The program is reading and classifying source text successfully.
-- It is not producing a reusable token list for later compiler stages yet.
-- It is not emitting C.
-
-## 11. Intended Full Compiler Pipeline In Detail
-
-The rest of the repository documents a classic compiler architecture. This section ties those pieces together into one complete flow.
-
-### 11.1 Phase 1: Lexer
-
-Expected long-term input:
-
-- raw `.cym2c` source code
-
-Expected long-term output:
-
-- a `std::vector<Token>`
-
-Expected responsibilities:
-
-- recognize delimiters, keywords, operators, identifiers, literals
-- decode Morse strings and possibly Morse-based identifiers/numbers
-- track line and column positions
-- report lexical errors
-
-Current gap:
-
-- `Token` exists in `main.cpp`, but the current code prints discoveries instead of constructing a token stream.
-
-### 11.2 Phase 2: Syntaxer
-
-Planned input:
-
-- token stream from the lexer
-
-Planned output:
-
-- AST rooted at a `Program` node
-
-Planned responsibilities:
-
-- validate statement order and nesting
-- parse constructs such as if, while, for, blocks, assignments, and print statements
-- preserve source positions for good error messages
-
-The design notes in `syntaxer/readme.md` describe a recursive-descent parser approach and sample AST node shapes.
-
-### 11.3 Phase 3: Semanter
-
-Planned input:
-
-- AST from the syntaxer
-
-Planned output:
-
-- validated and annotated AST
-
-Planned responsibilities:
-
-- symbol table creation
-- declaration and use checks
-- type checks
-- scope checks
-- reporting semantic errors
-
-The `semanter/readme.md` notes suggest a visitor-style traversal and a scope stack.
-
-### 11.4 Phase 4: Optimizers
-
-Planned input:
-
-- semantically valid AST
-
-Planned output:
-
-- optimized AST with the same meaning
-
-Planned responsibilities:
-
-- constant folding
-- dead-code elimination
-- algebraic simplification
-- loop simplification
-- common subexpression elimination
-
-This phase is optional by design.
-
-### 11.5 Phase 5: Generators
-
-Planned input:
-
-- AST from the optimizer, or directly from the semanter if optimization is skipped
-
-Planned output:
-
-- valid C source code
-
-Planned responsibilities:
-
-- emit headers such as `#include <stdio.h>`
-- declare variables
-- convert print constructs into `printf(...)`
-- emit control flow in valid C syntax
-- generate `main()` and return statements
-
-The generator documentation already sketches an output-oriented class around a `std::stringstream`.
-
-## 12. Language Metadata In The Repo
-
-The repo already defines the basic token vocabulary in [lexer/include/tokens.h](lexer/include/tokens.h).
-
-### 12.1 Keywords
-
-| Raw token | Meaning |
-|---|---|
-| `/` | `MAIN` |
-| `%` | `FOR` |
-| `%%` | `WHILE` |
-| `~` | `IF` |
-| `~~` | `ELSE` |
-| `<` | `PRINTST` |
-| `>` | `PRINTEND` |
-| `^` | `EXIT` |
-
-### 12.2 Separators
-
-| Raw token | Meaning |
-|---|---|
-| `{` | `CURL_ST` |
-| `}` | `CURL_END` |
-| `,` | `COMA` |
-| `;` | `SEMI_COLON` |
-| ` ` | `SPACE` |
-
-### 12.3 Category Map
-
-`categoryMap` groups keywords and separators under broad classes like `KEYWORD` and `SEPARATOR`. This is useful groundwork for a real tokenization API.
-
-## 13. Limitations In The Current Implementation
-
-Nothing should be hidden here, so this section is explicit.
-
-### 13.1 What Works
-
-- Opening and reading `.cym2c` files
-- Scanning line by line
-- Recognizing comments
-- Recognizing single-character separators and keywords
-- Handling parentheses separately
-- Translating Morse inside quotes
-- Raising a simple compile error for some malformed line endings
-
-### 13.2 What Does Not Exist Yet
-
-- no parser
-- no AST
-- no semantic analyzer
-- no optimizer
-- no C generator
-- no generated `.c` file output
-- no integration with `gcc` or `clang` for final binaries
-
-### 13.3 Implementation Gaps Inside The Lexer
-
-- `Token` is declared but not populated into a vector for downstream phases.
-- Multi-character operators such as `%%` and `~~` are defined in the map but not lexed as combined tokens.
-- Input is hardcoded in `main()`.
-- The scanner mixes lexing, printing, and validation in a single routine.
-- Morse parsing depends on global namespace state.
-- Morse translation currently yields uppercase output only.
-- Morse decoding is only used inside quoted strings, not yet as a full identifier/number token strategy across the language.
-- Space characters are emitted as separators, which creates noisy output during indentation.
-- The line-ending validation is heuristic and not a real grammar check.
-
-## 14. Recommended Next Engineering Steps
-
-If the goal is to turn this repo into a full compiler, the cleanest order is:
-
-1. Move the `Token` struct into a shared header and add line/column metadata.
-2. Refactor `readFile()` so it builds and returns `std::vector<Token>`.
-3. Add proper handling for multi-character tokens such as `%%`, `~~`, `==`, `\<`, and `\>`.
-4. Separate Morse decoding from console printing.
-5. Implement the syntaxer as the first consumer of the token stream.
-6. Define a minimal AST for blocks, print statements, literals, identifiers, assignments, and control flow.
-7. Add semantic checks only after the parser is stable.
-8. Generate a small subset of C first, then grow coverage.
-
-## 15. Example Of The Future Full Flow
-
-A plausible finished flow would look like this:
-
-```text
-Source (.cym2c)
-    /{
-        <".... ..">;
-    }
-
-Lexer output
-    MAIN
-    CURL_ST
-    PRINTST
-    STRING("HI")
-    PRINTEND
-    SEMI_COLON
-    CURL_END
-
-Syntaxer output
-    Program
-      Block
-        PrintStatement("HI")
-
-Semanter output
-    Program marked valid
-
-Generator output
-    #include <stdio.h>
-    int main() {
-        printf("HI");
-        return 0;
-    }
-```
-
-That is the architectural direction the existing folder layout already suggests.
+### 12.3 Stress Test
+
+From [m2c_files/stress_test.cym2c](m2c_files/stress_test.cym2c):
+
+- Morse string output
+- chained arithmetic
+- multiplication
+- subtraction
+- division
+- switching back and forth between strings and arithmetic
+
+This file is intended as the current end-to-end confidence test.
+
+## 13. What Is Implemented Versus Planned
+
+### 13.1 Implemented Today
+
+- root-level build and run workflow
+- strict compiler CLI
+- file reading and tokenization
+- token storage in `std::vector<Token>`
+- Morse string translation
+- parser for a small statement subset
+- declaration/use validation for that subset
+- C++ generation
+- inline assembly generation for arithmetic
+- automatic final executable compilation
+
+### 13.2 Still Planned Or Incomplete
+
+- full AST hierarchy
+- separate semantic-analysis phase
+- optimizer phase
+- control-flow parsing for `%`, `%%`, `~`, `~~`, `^`
+- richer expressions
+- type system
+- scoped blocks beyond the current lightweight handling
+- function support
+- full language specification
+
+## 14. Known Limitations
+
+The current compiler is functional, but intentionally narrow.
+
+Important limitations:
+
+- It supports only a small MVP syntax.
+- Arithmetic is limited to simple binary expressions such as `a + b`.
+- No operator precedence parser exists yet.
+- No nested arithmetic expressions like `a + b * c`.
+- No floating-point values.
+- No explicit semantic-analysis module yet.
+- The parser is still acting as both syntax and part of semantics.
+- Legacy `lexer/scripts/` files remain in the repo and may confuse new contributors.
+- `tokenMaker.cpp` still builds with old warnings, though it is not part of the new pipeline path.
+
+## 15. Recommended Next Steps
+
+The most useful next engineering steps are:
+
+1. Move from `std::vector<Statement>` to a real AST.
+2. Split semantic checks out of `Parser` into the `semanter/` phase.
+3. Define grammar for control flow markers `%`, `%%`, `~`, `~~`, and `^`.
+4. Add nested expression parsing and precedence handling.
+5. Decide whether the project should ultimately target generated C or generated C++.
+6. Clean up or retire legacy lexer-only artifacts that no longer represent the active architecture.
+7. Expand tests around invalid arithmetic, invalid division cases, and malformed mixed Morse/math programs.
 
 ## 16. Final Summary
 
-Today, M2C is best understood as:
+Today, M2C is no longer just a Morse-aware lexer.
 
-- a working lexer prototype
-- a Morse string translator
-- a repository scaffold for a full compiler
-- a project with clear next steps, but not yet a finished end-to-end translator
+It is now a small working compiler pipeline that:
 
-For day-to-day contributor guidance, use [contribution.md](contribution.md). For the short project overview, use [readme.md](readme.md).
+- tokenizes `.cym2c` source
+- validates a minimal print-and-assignment language
+- translates Morse strings
+- emits C++ code
+- uses inline x86 assembly for arithmetic
+- invokes `g++`
+- produces runnable executables
+
+For the project overview, see [readme.md](readme.md). For contributor workflow, see [contribution.md](contribution.md).
