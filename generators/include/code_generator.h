@@ -23,7 +23,7 @@ private:
                                           const OffsetMap &offsets, const std::string &reg32);
     static void emitStoreFromEax(std::ostream &output, const std::string &target, const OffsetMap &offsets);
     static void emitPrintValue(std::ostream &output, const Operand &operand, const OffsetMap &offsets);
-    static void emitArithmetic(std::ostream &output, const Statement &statement, const OffsetMap &offsets);
+    static void emitArithmeticCall(std::ostream &output, const Statement &statement, const OffsetMap &offsets);
 };
 
 #endif

@@ -1,6 +1,4 @@
 .section .rodata
-fmt_int:
-    .string "%d\n"
 str0:
     .string "SYSTEM"
 str1:
@@ -15,49 +13,41 @@ main:
     movq %rsp, %rbp
     subq $32, %rsp
     leaq str0(%rip), %rdi
-    call puts@PLT
-    movl $15000, %eax
-    addl $35000, %eax
+    call m2c_print
+    movl $15000, %edi
+    movl $35000, %esi
+    call m2c_add
     movl %eax, -4(%rbp)
-    movl -4(%rbp), %esi
-    leaq fmt_int(%rip), %rdi
-    xorl %eax, %eax
-    call printf@PLT
-    movl -4(%rbp), %eax
-    movl $10, %ecx
-    imull %ecx, %eax
+    movl -4(%rbp), %edi
+    call m2c_print_int
+    movl -4(%rbp), %edi
+    movl $10, %esi
+    call m2c_mul
     movl %eax, -8(%rbp)
-    movl -8(%rbp), %esi
-    leaq fmt_int(%rip), %rdi
-    xorl %eax, %eax
-    call printf@PLT
-    movl -8(%rbp), %eax
-    subl $50000, %eax
+    movl -8(%rbp), %edi
+    call m2c_print_int
+    movl -8(%rbp), %edi
+    movl $50000, %esi
+    call m2c_sub
     movl %eax, -12(%rbp)
-    movl -12(%rbp), %esi
-    leaq fmt_int(%rip), %rdi
-    xorl %eax, %eax
-    call printf@PLT
-    movl -12(%rbp), %eax
-    cltd
-    movl $5, %ecx
-    idivl %ecx
+    movl -12(%rbp), %edi
+    call m2c_print_int
+    movl -12(%rbp), %edi
+    movl $5, %esi
+    call m2c_div
     movl %eax, -16(%rbp)
-    movl -16(%rbp), %esi
-    leaq fmt_int(%rip), %rdi
-    xorl %eax, %eax
-    call printf@PLT
+    movl -16(%rbp), %edi
+    call m2c_print_int
     leaq str1(%rip), %rdi
-    call puts@PLT
-    movl -16(%rbp), %eax
-    addl $1, %eax
+    call m2c_print
+    movl -16(%rbp), %edi
+    movl $1, %esi
+    call m2c_add
     movl %eax, -20(%rbp)
-    movl -20(%rbp), %esi
-    leaq fmt_int(%rip), %rdi
-    xorl %eax, %eax
-    call printf@PLT
+    movl -20(%rbp), %edi
+    call m2c_print_int
     leaq str2(%rip), %rdi
-    call puts@PLT
+    call m2c_print
     movl $0, %eax
     leave
     ret

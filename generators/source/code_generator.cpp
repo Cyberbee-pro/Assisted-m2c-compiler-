@@ -15,8 +15,6 @@ void CodeGenerator::generate(const std::vector<Statement> &statements, const std
     const int stackSize = stackSizeForVariableCount(offsets.size());
 
     output << ".section .rodata\n";
-    output << "fmt_int:\n";
-    output << "    .string \"%d\\n\"\n";
 
     std::vector<std::string> stringLabels(statements.size());
     int stringIndex = 0;
@@ -49,7 +47,7 @@ void CodeGenerator::generate(const std::vector<Statement> &statements, const std
         {
         case StatementType::PrintString:
             output << "    leaq " << stringLabels[index] << "(%rip), %rdi\n";
-            output << "    call puts@PLT\n";
+            output << "    call m2c_print\n";
             break;
         case StatementType::PrintValue:
             emitPrintValue(output, statement.firstOperand, offsets);
@@ -59,7 +57,7 @@ void CodeGenerator::generate(const std::vector<Statement> &statements, const std
             emitStoreFromEax(output, statement.target, offsets);
             break;
         case StatementType::ArithmeticAssignment:
-            emitArithmetic(output, statement, offsets);
+            emitArithmeticCall(output, statement, offsets);
             break;
         }
     }
@@ -156,54 +154,36 @@ void CodeGenerator::emitPrintValue(std::ostream &output, const Operand &operand,
 {
     if (operand.type == TokenType::Number)
     {
-        output << "    movl $" << operand.value << ", %esi\n";
+        output << "    movl $" << operand.value << ", %edi\n";
     }
     else
     {
-        output << "    movl " << memoryOperand(offsets, operand.value) << ", %esi\n";
+        output << "    movl " << memoryOperand(offsets, operand.value) << ", %edi\n";
     }
 
-    output << "    leaq fmt_int(%rip), %rdi\n";
-    output << "    xorl %eax, %eax\n";
-    output << "    call printf@PLT\n";
+    output << "    call m2c_print_int\n";
 }
 
-void CodeGenerator::emitArithmetic(std::ostream &output, const Statement &statement, const OffsetMap &offsets)
+void CodeGenerator::emitArithmeticCall(std::ostream &output, const Statement &statement, const OffsetMap &offsets)
 {
-    emitLoadOperandToRegister(output, statement.firstOperand, offsets, "%eax");
+    emitLoadOperandToRegister(output, statement.firstOperand, offsets, "%edi");
+    emitLoadOperandToRegister(output, statement.secondOperand, offsets, "%esi");
 
     if (statement.operatorSymbol == "+")
     {
-        if (statement.secondOperand.type == TokenType::Number)
-        {
-            output << "    addl $" << statement.secondOperand.value << ", %eax\n";
-        }
-        else
-        {
-            output << "    addl " << memoryOperand(offsets, statement.secondOperand.value) << ", %eax\n";
-        }
+        output << "    call m2c_add\n";
     }
     else if (statement.operatorSymbol == "-")
     {
-        if (statement.secondOperand.type == TokenType::Number)
-        {
-            output << "    subl $" << statement.secondOperand.value << ", %eax\n";
-        }
-        else
-        {
-            output << "    subl " << memoryOperand(offsets, statement.secondOperand.value) << ", %eax\n";
-        }
+        output << "    call m2c_sub\n";
     }
     else if (statement.operatorSymbol == "*")
     {
-        emitLoadOperandToRegister(output, statement.secondOperand, offsets, "%ecx");
-        output << "    imull %ecx, %eax\n";
+        output << "    call m2c_mul\n";
     }
     else
     {
-        output << "    cltd\n";
-        emitLoadOperandToRegister(output, statement.secondOperand, offsets, "%ecx");
-        output << "    idivl %ecx\n";
+        output << "    call m2c_div\n";
     }
 
     emitStoreFromEax(output, statement.target, offsets);

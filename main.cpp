@@ -63,7 +63,10 @@ int main(int argc, char *argv[])
         generator.generate(statements, assemblyFile);
 
         const std::string compileCommand =
-            "gcc " + shellQuote(assemblyFile) + " -no-pie -o " + shellQuote(options.outputBinaryName);
+            "gcc " + shellQuote(assemblyFile) +
+            " " + shellQuote("runtime/io.s") +
+            " " + shellQuote("runtime/math.s") +
+            " -no-pie -o " + shellQuote(options.outputBinaryName);
 
         if (std::system(compileCommand.c_str()) != 0)
         {
