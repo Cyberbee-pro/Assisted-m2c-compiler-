@@ -1,286 +1,183 @@
-# 🌳 Syntaxer - Phase 2: Parsing & AST Building
+# Syntaxer
 
-## What is the Syntaxer?
+The syntaxer is the parser stage of the current compiler.
 
-The **Syntaxer** (Syntax Analyzer) is the **second phase** of the M2C compiler. It takes the token stream from the Lexer (which has already decoded morse to standard notation) and:
-1. **Validates** that tokens follow the morse language grammar
-2. **Builds** an Abstract Syntax Tree (AST) - a tree representation of program structure
-3. **Reports** syntax errors if tokens violate grammar rules
+It converts the lexer's raw token stream into a small structured intermediate representation that the generator can consume directly.
 
-**Key Point:** Morse numbers and identifiers have already been decoded by the Lexer, so the Syntaxer works with standard tokens like `5`, `i`, `hello`, etc.
+## Files
 
-```
-Morse input:     ( % ( .... ; ----- ; ..... ) ... )
-                         ↓
-            [LEXER decodes morse]
-                         ↓
-Token stream:     ( % ( i ; 0 ; 5 ) ... )
-                         ↓
-        [SYNTAXER processes]
-                         ↓
-                    Program AST
-                      /    \
-                  ForLoop   ...
-                  /  |  \
-                init cond body
-```
+- [include/parser.h](include/parser.h)
+- [source/parser.cpp](source/parser.cpp)
 
-## Input & Output
+## Input And Output
 
-### 📥 Input
-- **Token Stream** from the Lexer
-- Example: `Token(LPAREN), Token(OPERATOR, "%"), Token(LPAREN), ...`
-
-### 📤 Output
-- **Abstract Syntax Tree (AST)**  
-- Tree nodes representing program structure
-- Type: Root node is `Program` class
-
-## Key Responsibilities
-
-✅ **Grammar Validation**
-- Ensure tokens match valid morse syntax
-- Check parentheses balance and nesting
-
-✅ **AST Construction**
-- Create appropriate AST nodes for each construct
-- Link nodes into a tree structure
-
-✅ **Error Detection**
-- Catch missing tokens or unexpected sequences
-- Report syntax errors with helpful context
-
-✅ **Position Tracking**
-- Map AST nodes back to source locations
-- Enable accurate error reporting
-
-## Grammar Rules
-
-The M2C compiler supports these structures with morse syntax:
-
-```
-Program ::= Statement*
-
-Statement ::= IfStatement | ForLoop | WhileLoop | FunctionCall
-
-IfStatement ::= "~" "(" Condition ")" Statement
-
-ForLoop ::= "%" "(" Var ";" Init ";" Condition ";" Update ")" Statement
-
-WhileLoop ::= "%%" "(" Condition ")" Statement  
-
-FunctionCall ::= "/{" ArgumentList "}" | "<" String ">;"
-
-Condition ::= Expression ComparisonOp Expression
-
-Expression ::= Term (("\+"|"\-") Term)*
-
-Term ::= Factor (("\*"|"\/") Factor)*
-
-Comparison Operators: 
-  - "\<" (less than)
-  - "\>" (greater than)  
-  - "==" (equality, NO backslash)
-```
-
-## Data Structures - AST Nodes
+### Input
 
 ```cpp
-// Base class for all AST nodes
-class ASTNode {
-    virtual ~ASTNode() {}
-    virtual void accept(ASTVisitor* visitor) = 0;
-};
+const std::vector<Token> &
+```
 
-// Expression nodes
-class Expression : public ASTNode {
-    // abstract
-};
+### Output
 
-class BinaryOp : public Expression {
-    Expression* left;
-    std::string op;      // +, -, *, /, <, >, ==, etc.
-    Expression* right;
-};
+```cpp
+std::vector<Statement>
+```
 
-class Identifier : public Expression {
-    std::string name;
-};
+This is the parser’s main pipeline boundary.
 
-class Number : public Expression {
-    double value;
-};
+## Parser Data Nodes
 
-class String : public Expression {
+### `Operand`
+
+```cpp
+struct Operand
+{
+    TokenType type;
     std::string value;
-};
-
-// Statement nodes
-class Statement : public ASTNode {
-    // abstract
-};
-
-class IfStatement : public Statement {
-    Expression* condition;
-    Statement* thenBranch;
-    Statement* elseBranch;  // can be nullptr
-};
-
-class WhileLoop : public Statement {
-    Expression* condition;
-    Statement* body;
-};
-
-class ForLoop : public Statement {
-    Statement* init;
-    Expression* condition;
-    Statement* update;
-    Statement* body;
-};
-
-class Block : public Statement {
-    std::vector<Statement*> statements;
-};
-
-class FunctionCall : public Statement {
-    std::string functionName;
-    std::vector<Expression*> arguments;
-};
-
-class Assignment : public Statement {
-    std::string variableName;
-    Expression* value;
-};
-
-class Program : public ASTNode {
-    std::vector<Statement*> statements;
+    int line;
 };
 ```
 
-## Implementation Guidelines
+Used for:
 
-### 1. **Recursive Descent Parser**
+- integer literals
+- identifier references
 
-Use recursive descent parsing - each grammar rule becomes a function:
+### `Statement`
 
 ```cpp
-class Parser {
-    Parser(std::vector<Token> tokens);
-    
-    Program* parse();
-    
-private:
-    std::vector<Token> tokens;
-    int current;
-    
-    // Grammar rule functions
-    Statement* parseStatement();
-    IfStatement* parseIfStatement();
-    WhileLoop* parseWhileLoop();
-    ForLoop* parseForLoop();
-    Expression* parseExpression();
-    Expression* parseTerm();
-    Expression* parseFactor();
-    
-    // Utility functions
-    Token peek();
-    Token advance();
-    bool check(TokenType type);
-    bool match(TokenType type);
-    void error(std::string message);
+struct Statement
+{
+    StatementType type;
+    std::string target;
+    Operand firstOperand;
+    Operand secondOperand;
+    std::string operatorSymbol;
+    std::string text;
+    int line;
 };
 ```
 
-### 2. **Error Recovery**
+This is the parser’s output node.
 
-When encountering syntax errors:
-- Report the error with location information
-- Attempt to recover to continue parsing
-- Collect multiple errors if possible
+## Supported Statement Types
 
-```cpp
-void Parser::error(std::string message) {
-    Token current = peek();
-    std::cerr << "Syntax Error at line " << current.line 
-              << ", column " << current.column 
-              << ": " << message << std::endl;
-}
+- `PrintString`
+- `PrintValue`
+- `VariableAssignment`
+- `ArithmeticAssignment`
+
+## Parser Pipeline
+
+```text
+std::vector<Token>
+  -> Parser::parse(...)
+  -> token dispatch loop
+  -> parsePrintStatement() / parseAssignmentStatement()
+  -> std::vector<Statement>
 ```
 
-### 3. **Operator Precedence**
+## Internal Parser State
 
-Handle operator precedence correctly:
-```
-Highest:  * /
-          + -
-Lowest:   < > == !=
-```
+The parser tracks:
 
-## Interface / Main Entry Point
+- `tokens_`
+- `currentIndex_`
+- `declaredVariables_`
 
-```cpp
-class Parser {
-    Parser(std::vector<Token> tokens);
-    
-    // Parse tokens into AST
-    Program* parse();
-    
-    // Get error messages
-    std::vector<std::string> getErrors();
-    
-    // Check if parsing was successful
-    bool hasErrors();
-};
+That last set means the parser currently performs some semantic validation in addition to syntax validation.
+
+## Parsing Rules
+
+### Print Statements
+
+Accepted forms:
+
+```text
+<".... . .-.. .-.. ---">;
+<x>;
+<42>;
 ```
 
-## Testing
+Validation:
 
-Test cases should cover:
-- Valid morse/token sequences produce correct AST
-- Nested structures (loops within if, etc.)
-- All statement types and expressions
-- Error messages for invalid syntax
-- Operator precedence
-- Edge cases (empty blocks, missing semicolons, etc.)
+- statement must start with `<`
+- next token must be a translated string, identifier, or number
+- `>` must follow
+- `;` must terminate the statement
 
-### Example Test Case
+Output:
 
-```cpp
-// Input tokens for: "if (x < 10) printf(x);"
-std::vector<Token> tokens = {
-    Token(KEYWORD, "if", 1, 0),
-    Token(LPAREN, "(", 1, 2),
-    Token(IDENTIFIER, "x", 1, 3),
-    Token(OPERATOR, "<", 1, 4),
-    Token(NUMBER, "10", 1, 6),
-    Token(RPAREN, ")", 1, 8),
-    Token(KEYWORD, "printf", 1, 10),
-    Token(LPAREN, "(", 1, 16),
-    Token(IDENTIFIER, "x", 1, 17),
-    Token(RPAREN, ")", 1, 18),
-    Token(SEMICOLON, ";", 1, 19),
-    Token(END_OF_FILE, "", 1, 20)
-};
+- `PrintString` if the payload is a `MorseString`
+- `PrintValue` if the payload is an identifier or number
 
-Parser parser(tokens);
-Program* ast = parser.parse();
+### Assignment Statements
 
-// Verify AST structure
-assert(ast->statements.size() == 1);
-assert(dynamic_cast<IfStatement*>(ast->statements[0]) != nullptr);
-IfStatement* ifStmt = (IfStatement*)ast->statements[0];
-assert(dynamic_cast<BinaryOp*>(ifStmt->condition) != nullptr);
+Accepted forms:
+
+```text
+let x = 5;
+let y = x;
+let z = y + 3;
 ```
 
-## Next Phase
+Validation:
 
-After parsing, the AST flows to the **Semanter** which:
-- Checks semantic correctness (types, scope, etc.)
-- Detects logical errors
-- Annotates AST with type information
+- `let` must begin the statement
+- next token must be an identifier
+- next token must be `=`
+- right-hand side must be:
+  - one operand
+  - or operand operator operand
+- statement must end with `;`
 
-See `semanter/readme.md` for more details.
+Output:
 
----
+- `VariableAssignment`
+- `ArithmeticAssignment`
 
-**Key Concepts**: Recursive Descent Parsing, Abstract Syntax Tree, Operator Precedence, Error Recovery
+## Helper Functions
+
+### `expect(...)`
+
+Consumes and validates an exact token type.
+
+### `peek()`
+
+Reads the current token without consuming it.
+
+### `advance()`
+
+Moves the parser forward by one token.
+
+### `parseOperand(...)`
+
+Builds an `Operand` from either:
+
+- `Identifier`
+- `Number`
+
+### `ensureIdentifierIsDeclared(...)`
+
+Rejects identifier use before declaration.
+
+### `buildLineSnippet(...)`
+
+Reconstructs a readable line fragment for `CompileError` messages.
+
+## Error Behavior
+
+The parser throws `CompileError` for:
+
+- malformed print syntax
+- malformed assignment syntax
+- unexpected top-level tokens
+- undeclared identifier use
+
+## Current Limits
+
+- no full AST hierarchy yet
+- no nested expression grammar
+- no operator precedence handling
+- no control-flow parsing yet
+- semantic checks are only partial

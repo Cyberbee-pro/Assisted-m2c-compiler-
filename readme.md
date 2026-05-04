@@ -1,152 +1,179 @@
 # M2C Compiler
 
-M2C is a Morse-code-flavored compiler project whose long-term goal is to translate `.cym2c` source files into valid C. The repository already contains a working lexer executable and design notes for the remaining compiler stages.
+M2C is a modular Morse-flavored compiler that reads `.cym2c` programs, tokenizes them, parses a small statement-level IR, generates GNU assembly, links against an assembly runtime library, and produces a native executable.
 
-## Current Status
-
-The project is split into five compiler phases:
-
-| Phase | Folder | Status | What it does today |
-|---|---|---|---|
-| Lexer | `lexer/` | Implemented | Reads `.cym2c` input, recognizes separators and keywords, translates Morse inside quoted strings, prints token/debug information |
-| Syntaxer | `syntaxer/` | Planned | Parser and AST stage described in docs only |
-| Semanter | `semanter/` | Planned | Semantic analysis stage described in docs only |
-| Optimizers | `optimizers/` | Planned | Optimization stage described in docs only |
-| Generators | `generators/` | Planned | C code generation stage described in docs only |
-
-If you want the complete technical walkthrough, read [working.md](working.md). That document explains both the real code path that works now and the intended end-to-end compiler pipeline.
-
-## Pipeline Overview
-
-The target architecture is:
+## End-To-End Pipeline
 
 ```text
-.cym2c source
-  -> lexer
-  -> syntaxer
-  -> semanter
-  -> optimizers
-  -> generators
-  -> C output
+CLI input
+  -> main.cpp
+  -> Lexer
+  -> std::vector<Token>
+  -> Parser
+  -> std::vector<Statement>
+  -> CodeGenerator
+  -> temp.s
+  -> runtime/io.s + runtime/math.s
+  -> gcc -no-pie
+  -> executable
 ```
 
-The current executable stops after the lexer-style inspection stage and prints its findings to standard output.
+## Main Modules
 
-## What The Current Lexer Recognizes
+### Root
 
-The lexer code currently understands:
+- [main.cpp](main.cpp)
+- [build.sh](build.sh)
+- [run.sh](run.sh)
 
-- Main marker: `/`
-- Loop and control markers: `%`, `~`, `^`
-- Print delimiters: `<` and `>`
-- Separators: `{`, `}`, `,`, `;`, and spaces
-- Parentheses: `(` and `)`
-- Comments beginning with `//`
-- Morse sequences inside quoted strings such as `".... . .-.. .-.. ---"`
+### Lexer
 
-Morse letters and digits are mapped in [lexer/include/morse.h](lexer/include/morse.h). Keyword and separator metadata live in [lexer/include/tokens.h](lexer/include/tokens.h).
+- [lexer/include/lexer.h](lexer/include/lexer.h)
+- [lexer/include/token_types.h](lexer/include/token_types.h)
+- [lexer/include/morse.h](lexer/include/morse.h)
+- [lexer/source/lexer.cpp](lexer/source/lexer.cpp)
+- [lexer/source/morse.cpp](lexer/source/morse.cpp)
 
-## Quick Start
+### Syntaxer
 
-### Build
+- [syntaxer/include/parser.h](syntaxer/include/parser.h)
+- [syntaxer/source/parser.cpp](syntaxer/source/parser.cpp)
 
-The checked-in build script uses paths relative to `lexer/scripts`, so run it from that directory:
+### Generators
+
+- [generators/include/code_generator.h](generators/include/code_generator.h)
+- [generators/source/code_generator.cpp](generators/source/code_generator.cpp)
+
+### Runtime
+
+- [runtime/io.s](runtime/io.s)
+- [runtime/math.s](runtime/math.s)
+
+## Core Data Nodes
+
+The current pipeline is built around these concrete data shapes:
+
+### `CliOptions`
+
+Produced in `main.cpp` from:
+
+```text
+m2c <input.cym2c> -o <output_binary>
+```
+
+### `Token`
+
+Produced by the lexer:
+
+```cpp
+struct Token
+{
+    TokenType type;
+    std::string value;
+    int line;
+};
+```
+
+### `Operand`
+
+Produced by the parser inside statements.
+
+### `Statement`
+
+The current parsed IR node:
+
+- `PrintString`
+- `PrintValue`
+- `VariableAssignment`
+- `ArithmeticAssignment`
+
+## What Works Today
+
+- root build and run flow
+- file-based lexing
+- Morse decoding for quoted strings
+- token stream production
+- parser validation for print and assignment statements
+- simple declaration-before-use checks
+- pure assembly output
+- runtime-backed printing and arithmetic
+- automatic assembly/link step
+
+## Supported Syntax
+
+### Print
+
+```text
+<".... . .-.. .-.. ---">;
+<x>;
+<42>;
+```
+
+### Assignment
+
+```text
+let x = 5;
+let y = x;
+```
+
+### Arithmetic
+
+```text
+let a = 5 + 3;
+let b = a * 2;
+let c = b - 4;
+let d = c / 2;
+```
+
+## Build
 
 ```bash
-cd lexer/scripts
 bash build.sh
 ```
 
-If you prefer compiling from the repository root, this equivalent command also works:
+This produces:
+
+```text
+./m2c_bin
+```
+
+## Run
 
 ```bash
-g++ lexer/source/main.cpp lexer/source/excptsextra.cpp lexer/source/morse.cpp \
-  -I lexer/include \
-  -o lexer/compiled/lexer \
-  -Wall -Wextra
+bash run.sh m2c_files/test_math.cym2c demo_math
 ```
 
-### Run
-
-After building, run:
+Or directly:
 
 ```bash
-./lexer/compiled/lexer
+./m2c_bin m2c_files/test_math.cym2c -o demo_math
 ```
 
-The current `main()` function is hardcoded to read:
+## Runtime Assembly Library
 
-```text
-m2c_files/test.cym2c
-```
+The generator links against:
 
-## Example
+### `runtime/io.s`
 
-Input file:
+- `m2c_print`
+- `m2c_print_int`
 
-```text
-/{
-    <".... . .-.. .-.. ---  .... . .-.. .-.. ---  .-- --- .-. .-.. -.. ">;
-}
-```
+### `runtime/math.s`
 
-Current lexer output includes:
+- `m2c_add`
+- `m2c_sub`
+- `m2c_mul`
+- `m2c_div`
 
-```text
-Keyword : "/"
-Keyword : "<"
-Found Quote!
-morse Translation? HELLO HELLO WORLD
-```
+This keeps generated assembly smaller and gives the codebase real reusable assembly modules.
 
-This shows the implemented behavior clearly: the program is already translating Morse inside strings, but it is not yet building an AST or generating C output.
+## Documentation Map
 
-## Repository Map
-
-```text
-m2c compiler/
-├── readme.md
-├── working.md
-├── contribution.md
-├── CONTRIBUTING.md
-├── m2c_files/
-├── lexer/
-│   ├── include/
-│   ├── source/
-│   ├── scripts/
-│   ├── compiled/
-│   └── readme.md
-├── syntaxer/
-├── semanter/
-├── optimizers/
-└── generators/
-```
-
-## Important Notes
-
-- The lexer currently prints diagnostics rather than returning a reusable token vector to later phases.
-- `Token` is defined in [lexer/source/main.cpp](lexer/source/main.cpp) but is not yet used to power a parser interface.
-- Multi-character keywords such as `%%` and `~~` are declared in the maps, but the active character-by-character scan does not yet combine them into single tokens.
-- The later compiler stages are documented, not implemented.
-
-## Documentation
-
-- Project deep dive: [working.md](working.md)
-- Contribution guide: [contribution.md](contribution.md)
-- Alternate contribution entry point: [CONTRIBUTING.md](CONTRIBUTING.md)
-- Lexer notes: [lexer/readme.md](lexer/readme.md)
-- Syntaxer notes: [syntaxer/readme.md](syntaxer/readme.md)
-- Semanter notes: [semanter/readme.md](semanter/readme.md)
-- Optimizer notes: [optimizers/readme.md](optimizers/readme.md)
-- Generator notes: [generators/readme.md](generators/readme.md)
-
-## Where To Contribute Next
-
-The most useful next steps are:
-
-1. Convert the lexer's printed output into a real token stream API.
-2. Implement the syntaxer around those tokens and define the first AST nodes.
-3. Add semantic checks for identifiers, scope, and value categories.
-4. Emit C from a validated AST.
-
-The contribution workflow and coding expectations are documented in [contribution.md](contribution.md).
+- deep technical walkthrough: [working.md](working.md)
+- contributor guide: [contribution.md](contribution.md)
+- alternate contributor entry: [CONTRIBUTING.md](CONTRIBUTING.md)
+- lexer internals: [lexer/readme.md](lexer/readme.md)
+- parser internals: [syntaxer/readme.md](syntaxer/readme.md)
+- generator internals: [generators/readme.md](generators/readme.md)
+- semantic-analysis plan: [semanter/readme.md](semanter/readme.md)
+- optimizer plan: [optimizers/readme.md](optimizers/readme.md)

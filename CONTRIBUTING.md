@@ -1,78 +1,34 @@
 # Contributing To M2C Compiler
 
-This file mirrors [contribution.md](contribution.md) so contributors can use either entry point.
+This file mirrors [contribution.md](contribution.md).
 
-## Project Reality First
+## Mental Model
 
-M2C is organized as a five-stage compiler:
+Treat the compiler as a pipeline of data nodes:
 
-1. Lexer
-2. Syntaxer
-3. Semanter
-4. Optimizers
-5. Generators
+```text
+CliOptions
+  -> Token vector
+  -> Statement vector
+  -> Assembly file
+  -> Linked executable
+```
 
-Only the lexer is implemented as runnable code right now. The remaining stages are documented targets.
+## Before Editing
 
-Start here:
+Read:
 
-- [readme.md](readme.md)
 - [working.md](working.md)
+- the phase README for the component you plan to change
 
-## Best Places To Contribute
-
-The most useful work right now is:
-
-1. Turn the lexer into a real token-stream producer.
-2. Add support for multi-character tokens such as `%%` and `~~`.
-3. Move shared token structures into headers.
-4. Start a minimal syntaxer implementation.
-5. Add more sample programs and validation steps.
-
-## Build And Run
-
-Run the existing script from `lexer/scripts`:
+## Validate Locally
 
 ```bash
-cd lexer/scripts
 bash build.sh
+bash run.sh m2c_files/test_math.cym2c demo_math
+./demo_math
 ```
 
-Or compile from the repository root:
+## Update Docs When Needed
 
-```bash
-g++ lexer/source/main.cpp lexer/source/excptsextra.cpp lexer/source/morse.cpp \
-  -I lexer/include \
-  -o lexer/compiled/lexer \
-  -Wall -Wextra
-```
-
-Then run:
-
-```bash
-./lexer/compiled/lexer
-```
-
-## Contribution Rules
-
-- Keep changes scoped and readable.
-- Update docs when behavior changes.
-- Validate the sample `.cym2c` input after code changes.
-- Be explicit about current limitations.
-
-## Good First Tasks
-
-- collect tokens instead of printing only
-- add token position data
-- support `%%` and `~~`
-- make input filename configurable
-- add more example source files
-
-## Pull Request Checklist
-
-- code builds
-- sample input runs
-- docs were updated if needed
-- limitations are documented honestly
-
-The repository will benefit most from changes that help the lexer feed a future parser cleanly.
+If you change any stage boundary or language behavior, update the docs in the same pass.

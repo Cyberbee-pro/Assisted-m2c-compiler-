@@ -1,1 +1,1 @@
-echo "*.s linguist-language=Assembly" > .gitattributes
+*.s linguist-language=Assembly
