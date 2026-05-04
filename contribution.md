@@ -1,147 +1,141 @@
 # Contributing To M2C Compiler
 
-This guide is for contributors who want to improve the M2C compiler in a way that matches the real state of the repository.
+This guide reflects the current modular compiler, not the earlier lexer-only prototype.
 
-## Project Reality First
+## Current Project State
 
-M2C is organized as a five-stage compiler:
+M2C is organized into these active areas:
 
-1. Lexer
-2. Syntaxer
-3. Semanter
-4. Optimizers
-5. Generators
+1. `lexer/`
+2. `syntaxer/`
+3. `generators/`
+4. `runtime/`
+5. root orchestration in `main.cpp`
 
-Right now, only the lexer stage is implemented as runnable code. The later stages exist as documented design targets in their phase `readme.md` files.
+Implemented today:
 
-Before starting, read:
+- tokenization
+- Morse string decoding
+- parsing for a small statement subset
+- pure assembly generation
+- runtime-backed printing and arithmetic
+- native executable output
 
-- [readme.md](readme.md) for the short project overview
-- [working.md](working.md) for the full pipeline and implementation walkthrough
+Still planned:
 
-## Best Places To Contribute
+- richer grammar
+- full AST
+- separate semantic analyzer
+- optimizer phase
 
-The highest-value work at the moment is:
+## Good Places To Contribute
 
-1. Improve the lexer so it returns a real token stream instead of printing diagnostics only.
-2. Add support for multi-character tokens such as `%%` and `~~`.
-3. Move shared token structures into a reusable header.
-4. Start the syntaxer with a minimal parser for blocks, print statements, and literals.
-5. Expand tests and sample `.cym2c` programs.
-6. Tighten build instructions and developer workflow.
+High-value work now includes:
 
-If you want a first contribution with low risk, start in `lexer/`.
+1. Extend the parser beyond simple binary expressions
+2. Move declaration/type checks into `semanter/`
+3. Add tests around invalid syntax and runtime behavior
+4. Expand the assembly runtime carefully
+5. Make temporary output filenames unique
+6. Implement control flow for `%`, `%%`, `~`, `~~`, and `^`
 
 ## Repository Areas
 
-| Area | Folder | Current state |
+| Area | Folder | Current role |
 |---|---|---|
-| Core working implementation | `lexer/` | Active code |
-| Parser design | `syntaxer/` | Documentation only |
-| Semantic analysis design | `semanter/` | Documentation only |
-| Optimization design | `optimizers/` | Documentation only |
-| Code generation design | `generators/` | Documentation only |
-| Sample input files | `m2c_files/` | Active examples |
+| Lexer | `lexer/` | File reading, tokenization, Morse decoding |
+| Syntaxer | `syntaxer/` | Statement parsing and validation |
+| Generators | `generators/` | GNU assembly emission |
+| Runtime | `runtime/` | Reusable assembly library for I/O and math |
+| Semanter | `semanter/` | Planned future semantic-analysis stage |
+| Optimizers | `optimizers/` | Planned future optimization stage |
+| Samples | `m2c_files/` | Manual validation inputs |
 
 ## Development Workflow
 
-1. Read the relevant phase documentation before changing code.
-2. Check the current behavior locally.
-3. Make focused changes.
-4. Re-run the build and sample input.
-5. Update documentation when behavior changes.
+1. Read the relevant phase docs first.
+2. Build from the repository root.
+3. Run at least one sample input.
+4. Update docs when behavior changes.
+5. Call out limitations honestly.
 
-## Building The Current Code
+## Build And Run
 
-Run the existing build script from its own directory:
+Build:
 
 ```bash
-cd lexer/scripts
 bash build.sh
 ```
 
-Or build from the repository root:
+Run:
 
 ```bash
-g++ lexer/source/main.cpp lexer/source/excptsextra.cpp lexer/source/morse.cpp \
-  -I lexer/include \
-  -o lexer/compiled/lexer \
-  -Wall -Wextra
+bash run.sh m2c_files/test_math.cym2c demo_math
 ```
 
-Then run:
+Or directly:
 
 ```bash
-./lexer/compiled/lexer
+./m2c_bin m2c_files/test_math.cym2c -o demo_math
 ```
 
-## Coding Guidelines
+## Validation Expectations
 
-- Keep changes small and understandable.
-- Preserve the current folder split by compiler stage.
-- Prefer shared headers for data that will be needed by later phases.
-- Add comments only where the logic is genuinely non-obvious.
-- Keep docs aligned with the actual implementation, not just the intended architecture.
+There is not yet a formal automated test suite, so contributors should validate changes manually.
+
+Useful checks:
+
+- valid Morse string print
+- valid numeric print
+- valid arithmetic assignment
+- missing semicolon error
+- undeclared identifier error
+- generated binary output
+
+When you submit a change, mention:
+
+1. which `.cym2c` file you used
+2. what command you ran
+3. what output or error you observed
 
 ## Documentation Expectations
 
-Update docs when you change:
+Update docs whenever you change:
 
-- build commands
-- language syntax
-- token shapes
+- CLI behavior
+- supported syntax
 - compiler phase responsibilities
-- sample input/output behavior
+- runtime API
+- build or link commands
+- sample workflows
 
-At minimum, check whether your change should also update:
+At minimum, check whether your change also requires edits to:
 
 - [readme.md](readme.md)
 - [working.md](working.md)
-- the phase-specific `readme.md`
+- the relevant phase README
 
-## Testing Expectations
+## Coding Guidelines
 
-There is not yet a formal automated test suite, so contributors should verify behavior by running the sample programs in `m2c_files/`.
-
-When you submit a change:
-
-1. State which file you used for validation.
-2. Describe the expected output.
-3. Mention any current limitations that still remain.
-
-Helpful manual checks include:
-
-- a valid print statement
-- comments starting with `//`
-- malformed lines missing a semicolon
-- Morse strings with one word and multiple words
-- keyword and separator recognition
+- Keep changes scoped and readable.
+- Preserve phase boundaries where possible.
+- Prefer reusable helpers over duplicating logic across phases.
+- Keep assembly runtime code small, explicit, and easy to audit.
+- Do not let docs drift from the actual implementation.
 
 ## Good First Tasks
 
-- Replace debug printing with `Token` collection.
-- Add line and column metadata to tokens.
-- Detect `%%` as a single while token.
-- Detect `~~` as a single else token.
-- Move `Token` into `lexer/include/`.
-- Make the input filename configurable instead of hardcoded.
-- Add more `.cym2c` examples.
+- add unique temporary assembly filenames
+- expand parser support for nested expressions
+- implement a first semantic-analysis pass in `semanter/`
+- add runtime helpers for comparisons or control flow
+- add more sample `.cym2c` programs
+- clean legacy artifacts that no longer match the active design
 
 ## Pull Request Checklist
 
-Before opening a PR, make sure:
-
-- the code builds locally
-- the sample program still runs
-- the docs match the new behavior
-- the change is scoped to a clear problem
-- limitations or follow-up work are called out honestly
-
-## Final Advice
-
-The biggest contribution you can make right now is reducing the gap between:
-
-- the documented five-stage compiler design
-- and the current lexer-only implementation
-
-Anything that makes the lexer reusable by a parser will move the entire project forward.
+- code builds with `bash build.sh`
+- at least one sample input was run
+- docs were updated if behavior changed
+- limitations are still documented clearly
+- new runtime or assembly behavior was verified manually
