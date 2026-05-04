@@ -1,0 +1,27 @@
+// ==========================================
+// M2C COMPILER - END-TO-END STRESS TEST
+// ==========================================
+
+// 1. The Parser Warm-up (Translates to "SYSTEM")
+<"... -.-- ... - . --">;
+
+// 2. High-Value Arithmetic (Testing 32-bit register limits)
+let a = 15000 + 35000;
+<a>;
+
+// 3. Sequential Loading (Testing if 'a' maps correctly into the next operation)
+let b = a * 10;
+<b>;
+
+let c = b - 50000;
+<c>
+
+// 4. The Division Trap (idivl assembly instruction is notoriously fragile)
+let d = c / 5;
+<d>;
+
+// 5. Rapid Context Switching (Math -> String -> Math -> String)
+<"... --- ...">; 
+let e = d + 1;
+<e>;
+<".... . .-.. .-.. ---">;
