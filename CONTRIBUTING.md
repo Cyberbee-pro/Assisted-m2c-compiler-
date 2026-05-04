@@ -2,55 +2,33 @@
 
 This file mirrors [contribution.md](contribution.md).
 
-## Project Reality
+## Mental Model
 
-M2C is currently a modular compiler with:
+Treat the compiler as a pipeline of data nodes:
 
-- a lexer in `lexer/`
-- a parser in `syntaxer/`
-- an assembly generator in `generators/`
-- an assembly runtime in `runtime/`
-- a root orchestrator in `main.cpp`
+```text
+CliOptions
+  -> Token vector
+  -> Statement vector
+  -> Assembly file
+  -> Linked executable
+```
 
-It is no longer just a lexer prototype.
+## Before Editing
 
-## Build
+Read:
+
+- [working.md](working.md)
+- the phase README for the component you plan to change
+
+## Validate Locally
 
 ```bash
 bash build.sh
-```
-
-## Run
-
-```bash
 bash run.sh m2c_files/test_math.cym2c demo_math
+./demo_math
 ```
 
-Or:
+## Update Docs When Needed
 
-```bash
-./m2c_bin m2c_files/test_math.cym2c -o demo_math
-```
-
-## Best Contribution Areas
-
-- parser expansion
-- semantic-analysis separation
-- optimizer implementation
-- runtime assembly growth
-- better testing
-- safer temporary-file handling
-
-## Contribution Rules
-
-- keep changes scoped
-- validate behavior locally
-- update docs when behavior changes
-- document remaining limits honestly
-
-## Before Opening A PR
-
-- build the compiler
-- run a sample input
-- note what you tested
-- update affected docs
+If you change any stage boundary or language behavior, update the docs in the same pass.

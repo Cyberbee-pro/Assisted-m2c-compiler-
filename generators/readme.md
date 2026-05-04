@@ -1,115 +1,171 @@
 # Generators
 
-The generator phase converts parsed statements into pure GNU assembly.
+The generator phase turns parsed statements into pure GNU assembly.
 
-Its implementation lives in:
+It is the stage that bridges high-level parsed intent to the low-level runtime API.
+
+## Files
 
 - [include/code_generator.h](include/code_generator.h)
 - [source/code_generator.cpp](source/code_generator.cpp)
 
-## Current Output
+## Input And Output
 
-The generator writes:
+### Input
+
+```cpp
+const std::vector<Statement> &
+```
+
+### Output
 
 ```text
 temp.s
 ```
 
-This file is then linked with the runtime assembly library by the root orchestrator.
+## Generator Pipeline
 
-## Input
+```text
+std::vector<Statement>
+  -> buildVariableOffsets(...)
+  -> assign string labels
+  -> emit .rodata
+  -> emit .text
+  -> emit main prologue
+  -> emit statement assembly
+  -> emit epilogue
+  -> temp.s
+```
 
-The generator consumes:
+## Internal Data Nodes
+
+### `OffsetMap`
 
 ```cpp
-std::vector<Statement>
+using OffsetMap = std::unordered_map<std::string, int>;
 ```
 
-from the parser.
+Maps variable names to stack offsets.
 
-## What It Emits
-
-- `.section .rodata`
-- string labels for translated Morse literals
-- `.text`
-- `.globl main`
-- stack-frame setup and teardown
-- variable storage in the stack frame
-- calls to runtime functions instead of fully open-coded I/O and math
-
-## Runtime Calls Used
-
-### I/O
-
-- `m2c_print`
-- `m2c_print_int`
-
-### Math
-
-- `m2c_add`
-- `m2c_sub`
-- `m2c_mul`
-- `m2c_div`
-
-These come from:
-
-- [../runtime/io.s](../runtime/io.s)
-- [../runtime/math.s](../runtime/math.s)
-
-## Generation Strategy
-
-### String Print
-
-For:
+Example:
 
 ```text
-<".... . .-.. .-.. ---">;
+x -> 4
+y -> 8
+z -> 12
 ```
 
-the generator:
+### String Label Table
 
-1. creates a string label in `.rodata`
-2. loads its address into `%rdi`
-3. emits `call m2c_print`
+Each string print is assigned a label like:
 
-### Value Print
+- `str0`
+- `str1`
+- `str2`
 
-For:
+These labels live in `.rodata`.
 
-```text
-<x>;
+## Generated Assembly Shape
+
+The generated file has this structure:
+
+1. `.section .rodata`
+2. string constants
+3. `.text`
+4. `.globl main`
+5. stack-frame setup
+6. statement code
+7. `movl $0, %eax`
+8. `leave`
+9. `ret`
+
+## Stack Model
+
+The generator uses a simple frame-pointer-based local-variable layout:
+
+```asm
+-4(%rbp)
+-8(%rbp)
+-12(%rbp)
 ```
 
-the generator:
+This makes variable addressing deterministic and easy to document.
 
-1. loads the value into `%edi`
-2. emits `call m2c_print_int`
+## Runtime Call Boundary
+
+The generator does not directly emit libc calls for normal program logic anymore.
+
+Instead it emits runtime calls.
+
+### String Output
+
+```asm
+leaq str0(%rip), %rdi
+call m2c_print
+```
+
+### Integer Output
+
+```asm
+movl -4(%rbp), %edi
+call m2c_print_int
+```
 
 ### Arithmetic
 
-For:
-
-```text
-let y = x * 2;
+```asm
+movl -4(%rbp), %edi
+movl $2, %esi
+call m2c_mul
+movl %eax, -8(%rbp)
 ```
 
-the generator:
+## Important Helper Functions
 
-1. loads operands into `%edi` and `%esi`
-2. emits `call m2c_mul`
-3. stores `%eax` into the target stack slot
+### `escapeAssemblyString(...)`
+
+Escapes string payloads for `.string` emission.
+
+### `buildVariableOffsets(...)`
+
+Assigns each declared variable a stable stack slot.
+
+### `stackSizeForVariableCount(...)`
+
+Computes aligned stack-frame allocation size.
+
+### `memoryOperand(...)`
+
+Formats stack-slot references like:
+
+```asm
+-4(%rbp)
+```
+
+### `emitLoadOperandToRegister(...)`
+
+Loads:
+
+- integer literals
+- stack-stored identifiers
+
+into a chosen 32-bit register.
+
+### `emitStoreFromEax(...)`
+
+Writes arithmetic or assignment results into the target stack slot.
+
+### `emitPrintValue(...)`
+
+Emits the runtime integer print path.
+
+### `emitArithmeticCall(...)`
+
+Loads `%edi` / `%esi`, calls the correct runtime math function, and stores `%eax`.
 
 ## Current Limits
 
-- one shared output file name: `temp.s`
-- no full register allocator
-- no optimizer pass yet
-- no branching/control-flow codegen yet
-
-## Next Logical Improvements
-
-- unique temp assembly filenames
-- assembly output tests
-- richer runtime helpers
-- control-flow generation
-- move from statement IR to AST-based codegen
+- fixed temporary output file name
+- no optimizer pass before generation
+- no control-flow code generation yet
+- no register allocation beyond simple helper emission

@@ -1,42 +1,44 @@
 # Semanter
 
-The semanter phase is still planned, not fully implemented as a separate module yet.
+The semanter is the planned semantic-analysis stage.
 
-## Current Situation
+## Where It Will Sit
 
-Some semantic checks currently happen inside the parser:
-
-- identifier must be declared before use
-- assignments must use valid operand shapes
-
-That was a practical shortcut to get the compiler producing working binaries.
-
-## Intended Role
-
-The long-term job of `semanter/` is to own:
-
-- symbol tables
-- declaration/use validation
-- type validation
-- scope handling
-- richer semantic diagnostics
-
-## Future Direction
-
-When this phase is implemented, the likely flow will become:
+The intended future pipeline is:
 
 ```text
-tokens
-  -> parser
-  -> AST
-  -> semanter
-  -> validated/annotated AST
-  -> generator
+Lexer
+  -> std::vector<Token>
+  -> Parser
+  -> AST or richer IR
+  -> Semanter
+  -> validated/annotated IR
+  -> Generator
 ```
 
-## Good Next Steps
+## What It Should Eventually Own
 
-- move declaration checks out of the parser
-- define a small symbol-table API
-- annotate expressions with resolved types
-- prepare the generator to consume semantic information instead of inference by convention
+- symbol tables
+- scope graphs
+- declaration/use validation
+- type validation
+- operation legality checks
+- richer diagnostics than the current parser-level checks
+
+## What Happens Today Instead
+
+Today, a small subset of semantic work is still embedded in the parser:
+
+- identifiers must be declared before use
+- assignment operands must have supported shapes
+
+That is a practical shortcut, not the intended long-term architecture.
+
+## Recommended Future Data Nodes
+
+When implemented, this stage will likely want:
+
+- symbol entries
+- resolved identifier references
+- type annotations
+- error lists attached to structured nodes

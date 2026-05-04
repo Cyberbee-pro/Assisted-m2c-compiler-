@@ -1,35 +1,31 @@
 # Optimizers
 
-The optimizer phase is still planned.
+The optimizer stage is planned for the future.
 
-## Current Situation
+## Current Pipeline Context
 
-M2C currently goes from:
+Today the compiler goes directly from parser IR to assembly generation:
 
 ```text
-Lexer -> Parser -> Generator -> Assembly Runtime -> Binary
+std::vector<Token>
+  -> std::vector<Statement>
+  -> temp.s
 ```
 
-There is no separate optimizer pass yet.
+No optimizer sits between those two stages yet.
 
-## Intended Role
+## Likely Future Role
 
-An eventual optimizer would sit between semantic analysis and generation.
+An optimizer would eventually consume a richer IR or AST and produce a semantically equivalent but better-shaped form for code generation.
 
-Likely responsibilities:
+Useful future optimizations:
 
 - constant folding
 - algebraic simplification
 - dead-code elimination
-- reducing redundant runtime calls
-- simplifying expression trees before assembly emission
+- reduction of unnecessary runtime calls
+- reuse of repeated expressions
 
-## Why It Is Not Implemented Yet
+## Why It Is Not Here Yet
 
-The current compiler still uses a small statement-level IR instead of a full AST, so optimization opportunities are intentionally limited.
-
-## Good Next Steps
-
-- introduce a richer AST first
-- add a semantic phase that resolves symbols and types
-- then implement simple constant folding before assembly generation
+The current `Statement` IR is intentionally small and flat, so optimization opportunities are limited until the parser grows into a richer structure.

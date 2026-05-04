@@ -1,37 +1,54 @@
 # Lexer
 
-The lexer is the first active compiler phase.
+The lexer is the first real transformation stage in the compiler.
 
-Its implementation lives in:
+Its job is to convert file text into a typed token stream that later phases can consume deterministically.
+
+## Files
 
 - [include/lexer.h](include/lexer.h)
 - [include/token_types.h](include/token_types.h)
 - [include/morse.h](include/morse.h)
+- [include/excptsextra.h](include/excptsextra.h)
 - [source/lexer.cpp](source/lexer.cpp)
 - [source/morse.cpp](source/morse.cpp)
+- [source/excptsextra.cpp](source/excptsextra.cpp)
 
-## Responsibilities
+## Input And Output
 
-- open a `.cym2c` file
-- scan line by line
-- tokenize the source into `std::vector<Token>`
-- decode Morse strings inside quotes
-- attach line numbers to tokens
-- reject obviously malformed line endings
+### Input
 
-## Output
+```cpp
+std::string fileName
+```
 
-The lexer returns:
+### Output
 
 ```cpp
 std::vector<Token>
 ```
 
-It no longer prints token diagnostics as its main job.
+## Core Token Node
 
-## Tokens Currently Produced
+```cpp
+struct Token
+{
+    TokenType type;
+    std::string value;
+    int line;
+};
+```
+
+This is the lexer's data output node.
+
+## Token Categories
+
+The current lexer can produce:
 
 - `MainMarker`
+- `LoopMarker`
+- `ConditionalMarker`
+- `ExitMarker`
 - `LetKeyword`
 - `PrintStart`
 - `PrintEnd`
@@ -47,43 +64,123 @@ It no longer prints token diagnostics as its main job.
 - `ArithmeticOperator`
 - `Comment`
 
-## Supported Lexical Patterns
+## Pipeline Inside The Lexer
 
-- `/` as main marker or division operator
-- `{` and `}`
-- `//` comments
-- `<` and `>`
-- `=`
-- `+`, `-`, `*`, `/`
+The main call is:
+
+```cpp
+Lexer::lex(const std::string &fileName)
+```
+
+Its internal pipeline is:
+
+```text
+filename
+  -> std::ifstream
+  -> line-by-line read loop
+  -> tokenizeLine(...)
+  -> appendBufferToken(...)
+  -> std::vector<Token>
+```
+
+## Important Helper Functions
+
+### `trim(...)`
+
+Used to normalize line-ending validation logic.
+
+### `isIdentifierToken(...)`
+
+Checks whether a buffered token matches:
+
+- leading alpha or underscore
+- remaining alnum or underscore
+
+### `isNumberToken(...)`
+
+Checks whether a buffered token is an integer literal.
+
+### `nextNonWhitespaceIndex(...)` and `previousNonWhitespaceIndex(...)`
+
+These help distinguish:
+
+- `/` as a main marker
+- `/` as a division operator
+
+### `isDivisionOperator(...)`
+
+Implements that context-sensitive `/` logic.
+
+### `appendBufferToken(...)`
+
+Classifies the buffered text as:
+
 - `let`
-- integer literals
-- identifiers
-- Morse strings inside quotes
+- number
+- identifier
 
-## Morse Handling
+or throws `CompileError`.
 
-Quoted Morse text is decoded during lexing through [source/morse.cpp](source/morse.cpp).
+### `validateLineEnding(...)`
+
+Rejects non-empty, non-comment lines that do not end in:
+
+- `;`
+- `{`
+- `}`
+
+## Morse Subsystem
+
+The lexer delegates quoted Morse decoding to [source/morse.cpp](source/morse.cpp).
+
+### Maps
+
+- `charMap`
+- `numericMap`
+
+### Runtime State
+
+The Morse parser currently uses shared namespace state:
+
+- `translatedToken`
+- `buffer`
+- `wrod`
+
+### Morse Pipeline
+
+```text
+quoted Morse text
+  -> morse_parse(...)
+  -> letter-by-letter decode
+  -> word assembly
+  -> translated std::string
+  -> TokenType::MorseString
+```
 
 Example:
 
 ```text
-<".... . .-.. .-.. ---">;
+".... . .-.. .-.. ---"
 ```
 
-becomes a `MorseString` token with value:
+becomes:
 
 ```text
 HELLO
 ```
 
+## Error Behavior
+
+The lexer can throw:
+
+- invalid token errors
+- malformed line-ending errors
+- file-open failures
+
+These flow upward to root `main.cpp`, which prints them and exits non-zero.
+
 ## Current Limits
 
-- only quoted strings are Morse-decoded
-- no column tracking yet
-- control-flow markers are recognized lexically but not fully parsed downstream
-
-## Next Logical Improvements
-
-- add column metadata
-- support richer token categories if the grammar grows
-- isolate more validation out of the lexer if syntax rules become more complex
+- column numbers are not tracked yet
+- Morse decoding is focused on quoted strings
+- tokenization is still intentionally narrow for the current grammar
