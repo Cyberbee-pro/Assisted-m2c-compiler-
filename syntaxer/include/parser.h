@@ -36,12 +36,10 @@ struct Statement
 class Parser
 {
 public:
-    explicit Parser(const std::vector<Token> &tokens);
-
-    std::vector<Statement> parse();
+    std::vector<Statement> parse(const std::vector<Token> &tokens);
 
 private:
-    const std::vector<Token> &tokens_;
+    const std::vector<Token> *tokens_ = nullptr;
     std::size_t currentIndex_ = 0;
     std::unordered_set<std::string> declaredVariables_;
 
@@ -52,6 +50,7 @@ private:
     const Token *peek() const;
     void advance();
     void ensureIdentifierIsDeclared(const Operand &operand, const std::string &messagePrefix) const;
+    std::string buildLineSnippet(int line) const;
 };
 
 #endif
