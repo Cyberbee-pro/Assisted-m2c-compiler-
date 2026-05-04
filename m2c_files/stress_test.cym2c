@@ -14,7 +14,7 @@ let b = a * 10;
 <b>;
 
 let c = b - 50000;
-<c>
+<c>;
 
 // 4. The Division Trap (idivl assembly instruction is notoriously fragile)
 let d = c / 5;

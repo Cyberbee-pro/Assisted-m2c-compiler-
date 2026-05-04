@@ -1,45 +1,14 @@
 #include "../include/parser.h"
-#include "../include/excptsextra.h"
+#include "../../lexer/include/excptsextra.h"
 #include <sstream>
 
-namespace
+std::vector<Statement> Parser::parse(const std::vector<Token> &tokens)
 {
-std::string buildLineSnippet(const std::vector<Token> &tokens, int line)
-{
-    std::ostringstream snippet;
-    bool needsSpace = false;
-
-    for (const Token &token : tokens)
-    {
-        if (token.line != line)
-        {
-            continue;
-        }
-
-        if (needsSpace && token.type != TokenType::Separator &&
-            token.type != TokenType::PrintEnd && token.type != TokenType::CloseParenthesis &&
-            token.type != TokenType::BlockEnd)
-        {
-            snippet << ' ';
-        }
-
-        snippet << token.value;
-        needsSpace = true;
-    }
-
-    return snippet.str().empty() ? "<unknown>" : snippet.str();
-}
-}
-
-Parser::Parser(const std::vector<Token> &tokens) : tokens_(tokens)
-{
-}
-
-std::vector<Statement> Parser::parse()
-{
-    std::vector<Statement> statements;
+    tokens_ = &tokens;
     currentIndex_ = 0;
     declaredVariables_.clear();
+
+    std::vector<Statement> statements;
 
     while (const Token *token = peek())
     {
@@ -59,7 +28,7 @@ std::vector<Statement> Parser::parse()
             statements.push_back(parseAssignmentStatement());
             break;
         default:
-            throw CompileError("***[Unexpected token in parser]***", buildLineSnippet(tokens_, token->line), token->line);
+            throw CompileError("***[Unexpected token in parser]***", buildLineSnippet(token->line), token->line);
         }
     }
 
@@ -75,7 +44,7 @@ Statement Parser::parsePrintStatement()
     const Token *valueToken = peek();
     if (valueToken == nullptr)
     {
-        throw CompileError("***[Expected value after <]***", buildLineSnippet(tokens_, printStart.line), printStart.line);
+        throw CompileError("***[Expected value after <]***", buildLineSnippet(printStart.line), printStart.line);
     }
 
     if (valueToken->type == TokenType::MorseString)
@@ -94,7 +63,7 @@ Statement Parser::parsePrintStatement()
     else
     {
         throw CompileError("***[Expected Morse string, identifier, or number after <]***",
-                           buildLineSnippet(tokens_, printStart.line), printStart.line);
+                           buildLineSnippet(printStart.line), printStart.line);
     }
 
     expect(TokenType::PrintEnd, "***[Expected > after print value]***");
@@ -102,8 +71,7 @@ Statement Parser::parsePrintStatement()
     const Token &terminator = expect(TokenType::Separator, "***[Expected ; after print statement]***");
     if (terminator.value != ";")
     {
-        throw CompileError("***[Expected ; after print statement]***",
-                           buildLineSnippet(tokens_, terminator.line), terminator.line);
+        throw CompileError("***[Expected ; after print statement]***", buildLineSnippet(terminator.line), terminator.line);
     }
 
     return statement;
@@ -138,7 +106,7 @@ Statement Parser::parseAssignmentStatement()
     const Token &terminator = expect(TokenType::Separator, "***[Expected ; after assignment]***");
     if (terminator.value != ";")
     {
-        throw CompileError("***[Expected ; after assignment]***", buildLineSnippet(tokens_, terminator.line), terminator.line);
+        throw CompileError("***[Expected ; after assignment]***", buildLineSnippet(terminator.line), terminator.line);
     }
 
     declaredVariables_.insert(statement.target);
@@ -151,7 +119,7 @@ Operand Parser::parseOperand(const std::string &messagePrefix)
     if (token == nullptr || (token->type != TokenType::Identifier && token->type != TokenType::Number))
     {
         const int line = token == nullptr ? 0 : token->line;
-        throw CompileError(messagePrefix, buildLineSnippet(tokens_, line), line);
+        throw CompileError(messagePrefix, buildLineSnippet(line), line);
     }
 
     Operand operand{token->type, token->value, token->line};
@@ -165,26 +133,26 @@ const Token &Parser::expect(TokenType type, const std::string &message)
     if (token == nullptr || token->type != type)
     {
         const int line = token == nullptr ? 0 : token->line;
-        throw CompileError(message, buildLineSnippet(tokens_, line), line);
+        throw CompileError(message, buildLineSnippet(line), line);
     }
 
     advance();
-    return tokens_[currentIndex_ - 1];
+    return (*tokens_)[currentIndex_ - 1];
 }
 
 const Token *Parser::peek() const
 {
-    if (currentIndex_ >= tokens_.size())
+    if (tokens_ == nullptr || currentIndex_ >= tokens_->size())
     {
         return nullptr;
     }
 
-    return &tokens_[currentIndex_];
+    return &(*tokens_)[currentIndex_];
 }
 
 void Parser::advance()
 {
-    if (currentIndex_ < tokens_.size())
+    if (tokens_ != nullptr && currentIndex_ < tokens_->size())
     {
         ++currentIndex_;
     }
@@ -194,6 +162,37 @@ void Parser::ensureIdentifierIsDeclared(const Operand &operand, const std::strin
 {
     if (operand.type == TokenType::Identifier && declaredVariables_.find(operand.value) == declaredVariables_.end())
     {
-        throw CompileError(messagePrefix, buildLineSnippet(tokens_, operand.line), operand.line);
+        throw CompileError(messagePrefix, buildLineSnippet(operand.line), operand.line);
     }
+}
+
+std::string Parser::buildLineSnippet(int line) const
+{
+    if (tokens_ == nullptr)
+    {
+        return "<unknown>";
+    }
+
+    std::ostringstream snippet;
+    bool needsSpace = false;
+
+    for (const Token &token : *tokens_)
+    {
+        if (token.line != line)
+        {
+            continue;
+        }
+
+        if (needsSpace && token.type != TokenType::Separator &&
+            token.type != TokenType::PrintEnd && token.type != TokenType::CloseParenthesis &&
+            token.type != TokenType::BlockEnd)
+        {
+            snippet << ' ';
+        }
+
+        snippet << token.value;
+        needsSpace = true;
+    }
+
+    return snippet.str().empty() ? "<unknown>" : snippet.str();
 }
