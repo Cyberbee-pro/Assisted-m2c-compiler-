@@ -177,3 +177,7 @@ This keeps generated assembly smaller and gives the codebase real reusable assem
 - generator internals: [generators/readme.md](generators/readme.md)
 - semantic-analysis plan: [semanter/readme.md](semanter/readme.md)
 - optimizer plan: [optimizers/readme.md](optimizers/readme.md)
+
+
+
+[License](GPL-3.0 license)
