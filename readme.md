@@ -179,5 +179,3 @@ This keeps generated assembly smaller and gives the codebase real reusable assem
 - optimizer plan: [optimizers/readme.md](optimizers/readme.md)
 
 
-
-[License](GPL-3.0 license)
